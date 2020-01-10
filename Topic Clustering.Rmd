@@ -1,0 +1,181 @@
+---
+title: "Bigram Graph and Topic Clustering"
+author: "Ken Zeng"
+date: "11/26/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+library(tidyverse)
+library(tidytext)
+library(sentimentr)
+library(igraph)
+library(ggraph)
+
+twitter <- read_csv("texas_election_2018.csv") # replace with your dataset 
+
+# filters tweets
+twitter$cleaned_text <- twitter$tweet_text %>%
+  str_replace_all("\n", "") %>%
+  str_replace_all("[^\\u0000-\\u007F]", "") %>%
+  str_replace_all("https://t\\.co.*", "") %>%
+  str_replace_all("&amp;", "") %>%
+  str_replace_all("(@[a-zA-Z0-9_]{0,15} |@[a-zA-Z0-9_]{0,15})", "") %>% 
+  str_replace_all("[[:punct:]]", "") 
+
+# idenitfy non stop word 
+paired_words <- twitter %>%
+  filter(is.na(retweet_user_screen_name)) %>% 
+  filter(!str_detect(cleaned_text, "santa")) %>%
+  select(cleaned_text) %>%
+  unnest_tokens(paired_words, cleaned_text, token = "ngrams", n = 2)
+
+paired_words %>%
+  count(paired_words, sort = TRUE)
+
+bigrams_separated <- paired_words %>%
+  separate(paired_words, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+```
+
+First I will generate a graph from the bigram counts where each word in the corpus is a node in the graph and each bigram in the corpus represents an edge in the graph. I found that filtering bigrams by frequency greater than 400 gives a graph thats best to view. If I reduce the cutoff the graph will become more cluttered and the central cluster will become more connected. Here, the size of each node and text represents the frequency of the word:
+
+```{r, echo=FALSE}
+word1_count <- bigram_counts %>% 
+  group_by(word1) %>% 
+  summarise(total1 = n()) %>%
+  arrange(desc(total1))
+
+word2_count <- bigram_counts %>% 
+  group_by(word2) %>% 
+  summarise(total2 = n()) %>% 
+  arrange(desc(total2))
+
+word_count <- word1_count %>% 
+  full_join(word2_count, by= c("word1"="word2")) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  mutate(total = total1 + total2) %>% 
+  arrange(desc(total)) %>% 
+  mutate(word = word1)
+
+# get the most common bigrams
+top_bigrams <- bigram_counts %>% 
+  filter(n > 300) 
+
+# find 
+node_size <- word_count %>% 
+  select(word, total) %>% 
+  filter(word %in% top_bigrams$word1 | word %in% top_bigrams$word2) 
+
+bigram_graph <- top_bigrams %>%
+  graph_from_data_frame(vert = node_size) 
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_diagonal(alpha = 0.4, color = "steelblue3") +
+  geom_node_point(aes(size=total), alpha = 0.5, color = "steelblue3") + 
+  geom_node_text(aes(label = name, size = total), 
+                 check_overlap = TRUE, colour = "grey99") + 
+  theme(legend.position="none", panel.background = element_rect(fill= "grey0"))
+
+ggraph(bigram_graph, layout = "linear", circular = TRUE) +
+  geom_edge_arc(alpha = 0.4, color = "steelblue3") +
+  geom_node_point(aes(size=total), alpha = 0.5, color = "steelblue3") + 
+  geom_node_text(aes(label = name, size = total), 
+                 check_overlap = TRUE, colour = "grey99") + 
+  theme(legend.position="none", panel.background = element_rect(fill= "grey0"))
+```
+
+The resulting structure seems to be very scattered with a single large cluster. Next I wanted to break up the large cluster in the center. The reason I want to do this is because words such as "beto" and "cruz" are practically in every single tweet, causing distinct topics to become cluttered together. I used a tfidf styled metric to identify "valuable bigrams", where I divide the count of each bigram by the total number of unique bigrams that contains either of the two words. By doing so, I hope to remove some of the less meaningful bigrams, particular ones that link to the word "ted" or "beto". 
+
+```{r, echo=FALSE}
+word2_count <- bigram_counts %>% 
+  count(word2, sort=TRUE)
+  
+word1_count <- bigram_counts %>% 
+  count(word1, sort=TRUE) 
+
+# we want to remove all words with high edge count 
+edge_count <- word2_count %>% 
+  merge(word1_count, by.x= "word2", by.y = "word1", all=TRUE) %>% 
+  mutate(total= n.x + n.y) %>% 
+  arrange(desc(total))
+
+# but at the same time, we want to keep edges with high values
+
+edge_stats <- bigram_counts %>% 
+  merge(edge_count %>% 
+          dplyr::select(word2, total), 
+        by.x = "word1", by.y = "word2", all = TRUE) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  merge(edge_count %>% 
+          dplyr::select(word2, total), 
+        by.x = "word2", by.y = "word2", all = TRUE) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0))
+
+edge_score <- edge_stats %>% 
+  mutate(score = n / (total.x + total.y)) %>%
+  arrange(desc(score)) 
+```
+
+```{r, echo = FALSE}
+top_edges <- edge_score %>% 
+  filter(n > 50) %>% 
+  top_n(500, wt=score) %>% 
+  filter(n > 100) %>% 
+  dplyr::select(word1, word2, score, n) 
+
+sizes <- word_count %>% 
+  filter(word %in% top_edges$word1 | word %in% top_edges$word2) 
+
+graph <- top_edges %>% 
+  graph_from_data_frame(vert = sizes) 
+
+ggraph(graph, layout = "fr") +
+  geom_edge_diagonal(alpha = 0.4, color = "steelblue3") +
+  geom_node_point(aes(size=n), alpha = 0.5, color = "steelblue3") + 
+  geom_node_text(aes(label = name, size = n), 
+                 check_overlap = TRUE, colour = "grey99") + 
+  theme(legend.position="none", panel.background = element_rect(fill= "grey0"))
+
+```
+
+This method successfully breaks up the larger chunks We can then filter the graph to look for large components, which may represent words that talk about similar topics. By looking at some of the word bigrams, we can see that in general most seem meaningful. We can filter this to remove all components with fewer than 5 degrees. Hoepfully this will give us some topics to work with:
+
+```{r, echo = FALSE}
+cc <- decompose(graph, min.vertices = 5)
+
+filtered_graph = cc[[1]]
+for (i in 2:length(cc)) {
+  filtered_graph <- filtered_graph %u% cc[[i]]
+}
+
+ggraph(filtered_graph, layout = "fr") +
+  geom_edge_diagonal(alpha = 0.4, color = "steelblue3") +
+  geom_node_point(alpha = 0.5, color = "steelblue3") + 
+  geom_node_text(aes(label = name), check_overlap = TRUE, colour = "grey99") + 
+  theme(legend.position="none", panel.background = element_rect(fill= "grey0"))
+
+```
+
+Unfortunately I encountered an error while trying to change the size of the lettering. But the results does seem like these are more cluster bigrams than what we had at the beginning.  
+
+
+
+
+
+
+
