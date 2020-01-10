@@ -1,0 +1,280 @@
+---
+title: "bigram_graph_generator"
+author: "Shashank Mahesh"
+date: "December 3, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r cars}
+library(tidyverse)
+library(tidytext)
+library(sentimentr)
+library(igraph)
+library(ggraph)
+library(readr)
+library(ggplot2)
+library(grid)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+bigram_graph_func <- function(twitter) {
+
+    twitter$cleaned_text <- twitter$tweet_text %>%
+      tolower() %>% 
+      str_replace_all("\n", "") %>%
+      str_replace_all("[^\\u0000-\\u007F]", "") %>%
+      str_replace_all("https://t\\.co.*", "") %>%
+      str_replace_all("&amp;", "") %>%
+      str_replace_all("(@[a-zA-Z0-9_]{0,15} |@[a-zA-Z0-9_]{0,15})", "") %>% 
+      str_replace_all("[[:punct:]]", "") 
+    
+    paired_words <- twitter %>%
+      filter(is.na(retweet_user_screen_name)) %>% 
+      filter(!str_detect(cleaned_text, "santa")) %>%
+      select(cleaned_text) %>%
+      unnest_tokens(paired_words, cleaned_text, token = "ngrams", n = 2)
+    
+    word_count <- twitter %>%
+      filter(is.na(retweet_user_screen_name)) %>% 
+      filter(!str_detect(cleaned_text, "santa")) %>%
+      select(cleaned_text) %>%
+      unnest_tokens(word, cleaned_text, token = "ngrams", n = 1) %>%
+      group_by(word) %>%
+      count(sort = TRUE)
+    
+    paired_words %>%
+      count(paired_words, sort = TRUE)
+    
+    bigrams_separated <- paired_words %>%
+      separate(paired_words, c("word1", "word2"), sep = " ")
+    
+    bigrams_filtered <- bigrams_separated %>%
+      filter(!word1 %in% stop_words$word) %>%
+      filter(!word2 %in% stop_words$word)
+    
+    ####### identify important bigrams 
+    
+    # new bigram counts:
+    bigram_counts <- bigrams_filtered %>% 
+      count(word1, word2, sort = TRUE)
+    
+    set.seed(2017)
+
+    top_bigrams <- bigram_counts %>% 
+      filter(n > 30) 
+    
+    node_size <- word_count %>% 
+      filter(word %in% top_bigrams$word1 | word %in% top_bigrams$word2) 
+    
+    bigram_graph <- top_bigrams %>%
+      graph_from_data_frame(vert = node_size) 
+    
+    out <- ggraph(bigram_graph, layout = "fr") +
+      geom_edge_diagonal(alpha = 0.4, color = "steelblue3") +
+      geom_node_point(aes(size=n), alpha = 0.5, color = "steelblue3") + 
+      geom_node_text(aes(label = name, size = n), 
+                     vjust = 1, hjust = 1, check_overlap = TRUE, colour = "grey99") + 
+      theme(legend.position="none", panel.background = element_rect(fill= "grey0"))
+    
+    print(out)
+    return(out)
+}
+```
+
+
+```{r}
+setwd("/Users/kenzeng/Desktop/College/STAT/STAT405")
+twitter <- readr::read_csv("texas_election_2018.csv") # replace with your dataset 
+
+twitter$cleaned_text <- twitter$tweet_text %>%
+      tolower() %>% 
+      str_replace_all("\n", "") %>%
+      str_replace_all("[^\\u0000-\\u007F]", "") %>%
+      str_replace_all("https://t\\.co.*", "") %>%
+      str_replace_all("&amp;", "") %>%
+      str_replace_all("(@[a-zA-Z0-9_]{0,15} |@[a-zA-Z0-9_]{0,15})", "") %>% 
+      str_replace_all("[[:punct:]]", "")
+```
+
+```{r}
+bigram_graph_func(twitter)
+```
+
+```{r}
+
+#TODO: one hot encodiing for each
+bigrams <- c("betofortexas betoforsenate", 
+             "betoforsenate betofortexas",
+             "el paso", 
+             "choosecruz keeptexasred", 
+             "migrant caravan", 
+             "tax 10abarrel", 
+             "democrats explain", 
+             "campaign money", 
+             "senate race", 
+             "election day", 
+             "switching votes", 
+             "choose tedcruz", 
+             "gun control", 
+             "robert francis"
+             )
+
+# how well does single word topics do? 
+bigrams <- c("betofortexas", 
+             "choosecruz", 
+             "caravan", 
+             "tax", 
+             "election", 
+             "debate", 
+             "trump", 
+             "democrats")
+
+build_bigram_classes <- function(df_in, bigram) {
+   df_in$bigram_class[str_detect(df_in$cleaned_text, bigram)] <- bigram
+   return(df_in)
+}
+
+#bigrams_df <- twitter %>% filter(str_detect(cleaned_text, paste(bigrams, collapse = "|")))
+
+twitter$bigram_class <- rep("nothing", nrow(twitter))
+
+#twitter$bigram_class
+#idxes <- ifelse((str_detect(twitter$cleaned_text, paste(bigrams, collapse = "|"))), "income tax", "nothing")
+
+twitter_classes <- twitter
+for (bigram in bigrams) {
+  twitter_classes <- build_bigram_classes(twitter_classes, bigram)
+}
+
+# twitter_classes %>% count(bigram_class) 
+```
+
+```{r}
+# let's look at how well these topics cover the topics in the tweets: 
+twitter_classes %>% count(bigram_class) 
+```
+
+```{r}
+user_bigram_classes <- twitter_classes %>% 
+  group_by(user_screen_name, bigram_class) %>% 
+  count(sort = TRUE) %>% 
+  ungroup() %>% 
+  filter(bigram_class != "nothing") %>% 
+  group_by(user_screen_name) %>% 
+  arrange(desc(n))  %>% 
+  summarise(bigram_class = first(bigram_class), count = max(n)) %>% 
+  ungroup() %>% 
+  arrange(desc(count))
+```
+
+
+```{r}
+influential_users <- twitter %>% 
+  filter(!is.na(retweet_user_screen_name)) %>% 
+
+  group_by(retweet_user_screen_name) %>% 
+  count(sort =TRUE) %>% 
+  ungroup() %>% 
+  top_n(5000) 
+# %>% 
+ # mutate(is.troll = ifelse(retweet_user_screen_name %in% troll_tweets$user_screen_name, 1, 0))
+
+# TODO: can be made more efficient using some form of join 
+influential_network <- twitter %>% 
+  filter(retweet_user_screen_name %in% influential_users$retweet_user_screen_name) %>% 
+  filter(user_screen_name %in% influential_users$retweet_user_screen_name)
+
+# TODO: can be made more efficient using join function 
+network_edges <- influential_network %>% 
+  group_by(user_screen_name, retweet_user_screen_name) %>% 
+  count(sort = TRUE) %>% 
+  ungroup() 
+  #%>% 
+  # mutate(troll_edge = ifelse(user_screen_name %in% troll_tweets$user_screen_name | 
+  #                              retweet_user_screen_name %in% troll_tweets$user_screen_name, 1,0))
+
+# remove self retweeting edges: yes there are people who retweeted themselves 
+twitter_graph <- network_edges %>% 
+  filter(user_screen_name != retweet_user_screen_name) %>% 
+  graph_from_data_frame(vert = influential_users)
+
+# filters largest connected component 
+largest_component <- decompose(twitter_graph, min.vertices = 200)[[1]]
+
+
+
+djacency <- as.matrix(as_adjacency_matrix(largest_component))
+layout <- layout_with_fr(largest_component)
+
+#try other igraph clustering algos
+twitter_clusters <- cluster_edge_betweenness(as.undirected(largest_component))
+
+
+two_cluster <- cut_at(twitter_clusters, no=2)
+
+
+V(largest_component)$group <- twitter_clusters$membership
+V(largest_component)$group <- two_cluster
+```
+
+
+```{r}
+social_graph <- ggraph(largest_component, layout = "kk") +
+  geom_edge_diagonal(alpha = 0.4, colour ="gray") +
+  scale_color_manual(values = c("steelblue", "indianred3", "green", "goldenrod", "purple", "brown")) +
+  #geom_node_point(aes(size = n), alpha= 0.5, colour = "steelblue3") +
+  geom_node_point(aes(size = n, alpha= 0.5, color=as.factor(group))) +
+  geom_node_text(aes(label = name, size = n), hjust=0.1, vjust=0.1, colour = "grey99", check_overlap = TRUE) + 
+  theme(panel.background = element_rect(fill= "grey0"))
+```
+
+```{r}
+#user_bigram_classes %>% filter(is.element(user_screen_name, V(largest_component)$name)) 
+
+vector_df <- data.frame(V(largest_component)$name, group = V(largest_component)$group)
+
+colnames(vector_df) <- c("name", "group")
+
+
+#head(vector_df)
+
+vector_merged <- merge(x = vector_df, y = user_bigram_classes, by.x = 'name', by.y = 'user_screen_name', all.x = TRUE)
+
+#ifelse(is.na(vector_merged$bigram_class), vector_merged$group, vector_merged$bigram_class)
+
+vector_merged$new_classes <- ifelse(is.na(vector_merged$bigram_class), vector_merged$group, vector_merged$bigram_class)
+
+
+
+V(largest_component)$new_classes <- vector_merged$new_classes
+#vector_df[vector_df$name == user_bigram_classes$user_screen_name]
+
+#as.data.frame(V(largest_component)) %>% filter(is.element(name, user_bigram_classes$user_screen_name ))
+
+#V(largest_component)$group[V(largest_component)$name == user_bigram_classes$user_screen_name]
+#V(largest_component)$name
+```
+
+
+```{r}
+social_graph2 <- ggraph(largest_component, layout = "kk") +
+  geom_edge_diagonal(alpha = 0.4, colour ="gray") +
+  scale_color_manual(values = c("steelblue", "indianred3", "green", "goldenrod", "purple", "brown")) +
+  #geom_node_point(aes(size = n), alpha= 0.5, colour = "steelblue3") +
+  geom_node_point(aes(size = n, alpha= 0.5, color=as.factor(new_classes))) +
+  geom_node_text(aes(label = name, size = n), hjust=0.1, vjust=0.1, colour = "grey99", check_overlap = TRUE) + 
+  theme( panel.background = element_rect(fill= "grey0"))
+```
+
+
+
