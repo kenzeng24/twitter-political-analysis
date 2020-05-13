@@ -1,4 +1,4 @@
-# TwitterClustering
+# Twitter Political Analysis
 
 In 2018, the Texas Senate election had its closest margin of victory in over 40 years [1]. This election gained a lot of national attention due to various issues surrounding the two candidates: Beto O’Rourke on the Democrat side and Ted Cruz on the Republican side. While there was a third candidate (Neal Dikeman, Libertation), analysis of his results have been omitted. Consequently, this project analyzes tweets from users throughout the country in order to gain insights on popular topics surrounding the election and how users were engaging with each other in the context of the election.
 
