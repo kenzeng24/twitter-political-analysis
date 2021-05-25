@@ -10,6 +10,11 @@ The main dataset for this project was a dataset of tweets discussing the electio
 
 One way to visualize user interaction is through constructing retweet networks; in these networks, each user represents a single node and a directed edge points from the user who made the retweet to the user who made the original tweet. Some of the graphs were generated using igraph, others were processed in R but generated on Gephi. In most of the generated plots there are two distinct clusters, one centered around Ted Cruz and the other centered around Beto O’Rourke. We expected to see this result, as they were the two primary candidates for this race and thus the center of most of the attention. We also noticed that the two clusters interact much more within themselves than with each other, as there are only a few lines that connect the two clusters.
 
+![October 12th 2018](https://github.com/kenzeng24/Twitter-political-analysis/tree/master/gephi_networks/oct_12.png)
+![October 17th 2018](https://github.com/kenzeng24/Twitter-political-analysis/tree/master/gephi_networks/oct_12.png)
+![November 4th 2018](https://github.com/kenzeng24/Twitter-political-analysis/tree/master/gephi_networks/nov_4_test.png)
+![November 6th 2018](https://github.com/kenzeng24/Twitter-political-analysis/tree/master/gephi_networks/nov_6.png)
+
 ## References
 
 - vitek, Patrick, and Abby Livingston. “How the Race between Ted Cruz and Beto O’Rourke Became the Closest in Texas in 40 Years.”" The Texas Tribune, The Texas Tribune, 9 Nov. 2018, www.texastribune.org/2018/11/09/ted-cruz-beto-orourke-closest-texas-race-40-years/.
