@@ -14,6 +14,7 @@ One way to visualize user interaction is through constructing retweet networks; 
 ![October 17th 2018](https://github.com/kenzeng24/Twitter-political-analysis/tree/master/gephi_networks/oct_12.png)
 ![November 4th 2018](https://github.com/kenzeng24/Twitter-political-analysis/tree/master/gephi_networks/nov_4_test.png)
 ![November 6th 2018](https://github.com/kenzeng24/Twitter-political-analysis/tree/master/gephi_networks/nov_6.png)
+![November 6th 2018](/gephi_networks/nov_6.png)
 
 ## References
 
